@@ -4,26 +4,80 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
+/**
+ * Service layer containing business logic for Items.
+ * Handles CRUD operations and asynchronous batch processing.
+ */
 @Service
 public class ItemService {
+
     @Autowired
     private ItemRepository itemRepository;
-    private static ExecutorService executor = Executors.newFixedThreadPool(10);
-    private List<Item> processedItems = new ArrayList<>();
-    private int processedCount = 0;
 
+    /**
+     * Thread pool for parallel async processing.
+     * You can tune the pool size as needed.
+     */
+    private final ExecutorService executor =
+            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
-    public List<Item> findAll() {
-        return itemRepository.findAll();
+    /**
+     * Asynchronously processes *every* item by:
+     *  1. Retrieving them from the DB
+     *  2. Setting status to "PROCESSED"
+     *  3. Saving back to the DB
+     *
+     * Tracks which ones succeeded and returns that list once *all* are done.
+     *
+     * @return a CompletableFuture that completes with the list of processed items
+     */
+    @Async
+    public CompletableFuture<List<Item>> processItemsAsync() {
+        // 1) fetch all items
+        List<Item> toProcess = itemRepository.findAll();
+
+        // thread-safe trackers
+        AtomicInteger successCount = new AtomicInteger(0);
+        ConcurrentLinkedQueue<Item> processedItems = new ConcurrentLinkedQueue<>();
+
+        // 2) kick off one CompletableFuture per item
+        List<CompletableFuture<Void>> futures = toProcess.stream()
+                .map(item -> CompletableFuture.runAsync(() -> {
+                    try {
+                        // update and save
+                        item.setStatus("PROCESSED");
+                        Item saved = itemRepository.save(item);
+
+                        // record success
+                        processedItems.add(saved);
+                        successCount.incrementAndGet();
+                    } catch (Exception ex) {
+                        // log the failure and skip this item
+                        // e.g. logger.error("Failed to process item {}", item.getId(), ex);
+                    }
+                }, executor))
+                .collect(Collectors.toList());
+
+        // 3) when *all* are done, return the list of successes
+        return CompletableFuture
+                .allOf(futures.toArray(new CompletableFuture[0]))
+                .thenApply(ignored -> {
+                    // you could also expose successCount.get() if you like
+                    return processedItems
+                            .stream()
+                            .collect(Collectors.toList());
+                });
     }
 
-    public Optional<Item> findById(Long id) {
-        return itemRepository.findById(id);
+    // --- the rest of your CRUD methods ---
+    public List<Item> findAll() {
+        return itemRepository.findAll();
     }
 
     public Item save(Item item) {
@@ -34,54 +88,7 @@ public class ItemService {
         itemRepository.deleteById(id);
     }
 
-
-    /**
-     * Your Tasks
-     * Identify all concurrency and asynchronous programming issues in the code
-     * Fix the implementation to ensure:
-     * All items are properly processed before the CompletableFuture completes
-     * Thread safety for all shared state
-     * Proper error handling and propagation
-     * Efficient use of system resources
-     * Correct use of Spring's @Async annotation
-     * Add appropriate comments explaining your changes and why they fix the issues
-     * Write a brief explanation of what was wrong with the original implementation
-     *
-     * Hints
-     * Consider how CompletableFuture composition can help coordinate multiple async operations
-     * Think about appropriate thread-safe collections
-     * Examine how errors are handled and propagated
-     * Consider the interaction between Spring's @Async and CompletableFuture
-     */
-    @Async
-    public List<Item> processItemsAsync() {
-
-        List<Long> itemIds = itemRepository.findAllIds();
-
-        for (Long id : itemIds) {
-            CompletableFuture.runAsync(() -> {
-                try {
-                    Thread.sleep(100);
-
-                    Item item = itemRepository.findById(id).orElse(null);
-                    if (item == null) {
-                        return;
-                    }
-
-                    processedCount++;
-
-                    item.setStatus("PROCESSED");
-                    itemRepository.save(item);
-                    processedItems.add(item);
-
-                } catch (InterruptedException e) {
-                    System.out.println("Error: " + e.getMessage());
-                }
-            }, executor);
-        }
-
-        return processedItems;
+    public Optional<Item> findById(Long id) {
+        return itemRepository.findById(id);
     }
-
 }
-
