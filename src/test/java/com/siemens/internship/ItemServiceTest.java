@@ -24,27 +24,29 @@ class ItemServiceTest {
     }
 
     @Test
-    void testProcessItemsAsync_processesAllAndFiltersNulls() throws Exception {
-        // given
-        when(itemRepository.findAllIds()).thenReturn(List.of(1L, 2L, 3L));
+    void testProcessItemsAsync_successfullyProcessesAllItems() throws Exception {
+        // prepare two real items
+        Item item1 = new Item(1L, "Item1", "desc", "NEW", "a@b.com");
+        Item item2 = new Item(2L, "Item2", "desc", "NEW", "b@b.com");
+        List<Item> toProcess = List.of(item1, item2);
 
-        Item i1 = new Item(1L, "A", "d", "NEW", "a@x.com");
-        Item i2 = new Item(2L, "B", "d", "NEW", "b@x.com");
-
-        when(itemRepository.findById(1L)).thenReturn(Optional.of(i1));
-        when(itemRepository.findById(2L)).thenReturn(Optional.of(i2));
-        when(itemRepository.findById(3L)).thenReturn(Optional.empty());
-
-        // saving returns the same instance
+        // stub repository behavior
+        when(itemRepository.findAll()).thenReturn(toProcess);
+        // echo back the saved item
         when(itemRepository.save(any(Item.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // when
+        // invoke the async processing
         CompletableFuture<List<Item>> future = itemService.processItemsAsync();
+        // wait up to 5 seconds for completion
         List<Item> processed = future.get(5, TimeUnit.SECONDS);
 
-        // then
+        // verify results
         assertEquals(2, processed.size(), "Should process exactly 2 items");
-        assertTrue(processed.stream().allMatch(it -> "PROCESSED".equals(it.getStatus())));
+        // each returned item must have status set to PROCESSED
+        processed.forEach(it ->
+                assertEquals("PROCESSED", it.getStatus(), "Each item should be marked PROCESSED")
+        );
+        // verify save was called twice
         verify(itemRepository, times(2)).save(any(Item.class));
     }
 }

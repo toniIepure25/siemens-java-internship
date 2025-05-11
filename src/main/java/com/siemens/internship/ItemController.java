@@ -25,6 +25,11 @@ public class ItemController {
     @Autowired
     private ItemService itemService;
 
+    @Autowired
+    public ItemController(ItemService itemService) {
+        this.itemService = itemService;
+    }
+
     /**
      * Get all items.
      */

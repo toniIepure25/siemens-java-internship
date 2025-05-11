@@ -1,16 +1,18 @@
 package com.siemens.internship;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.*;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.*;
+import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -27,42 +29,60 @@ class ItemControllerTest {
     private ObjectMapper objectMapper;
 
     @Test
-    void testGetAllItems() throws Exception {
-        List<Item> items = List.of(new Item(1L, "Test", "Desc", "NEW", "test@mail.com"));
+    void testGetAllItems_returnsList() throws Exception {
+        List<Item> items = List.of(
+                new Item(1L, "Test", "Desc", "NEW", "test@mail.com")
+        );
         when(itemService.findAll()).thenReturn(items);
 
         mockMvc.perform(get("/api/items"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.size()").value(1));
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("Test"));
     }
 
     @Test
-    void testCreateItem_Valid() throws Exception {
-        Item item = new Item(null, "Test", "Desc", "NEW", "test@mail.com");
-        when(itemService.save(any())).thenReturn(item);
+    void testGetItemById_found() throws Exception {
+        Item item = new Item(1L, "Found", "Desc", "NEW", "found@mail.com");
+        when(itemService.findById(1L)).thenReturn(Optional.of(item));
 
-        mockMvc.perform(post("/api/items")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(item)))
-                .andExpect(status().isCreated());
+        mockMvc.perform(get("/api/items/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.email").value("found@mail.com"));
     }
 
     @Test
-    void testCreateItem_InvalidEmail() throws Exception {
-        Item item = new Item(null, "Test", "Desc", "NEW", "invalid-email");
-
-        mockMvc.perform(post("/api/items")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(item)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.email").value("Invalid email format"));
-    }
-
-    @Test
-    void testGetItemById_NotFound() throws Exception {
+    void testGetItemById_notFound() throws Exception {
         when(itemService.findById(100L)).thenReturn(Optional.empty());
 
         mockMvc.perform(get("/api/items/100"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    void testCreateItem_valid() throws Exception {
+        Item input = new Item(null, "New", "Desc", "NEW", "new@mail.com");
+        Item saved = new Item(42L, "New", "Desc", "NEW", "new@mail.com");
+        when(itemService.save(any(Item.class))).thenReturn(saved);
+
+        mockMvc.perform(post("/api/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(input)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(42))
+                .andExpect(jsonPath("$.name").value("New"));
+    }
+
+    @Test
+    void testCreateItem_invalidEmail() throws Exception {
+        Item bad = new Item(null, "Bad", "Desc", "NEW", "not-an-email");
+
+        mockMvc.perform(post("/api/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bad)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.email").value("Invalid email format"));
     }
 }

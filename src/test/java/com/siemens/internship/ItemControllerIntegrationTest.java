@@ -60,7 +60,8 @@ class ItemControllerIntegrationTest {
     @Test
     void getItemById_notFound() throws Exception {
         mockMvc.perform(get("/api/items/{id}", 999L))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(""));  // empty body on 404
     }
 
     @Test
@@ -107,7 +108,6 @@ class ItemControllerIntegrationTest {
 
     @Test
     void updateItem_notFound() throws Exception {
-        // use a valid name so we get 404 instead of 400
         Map<String,Object> payload = Map.of(
                 "name",        "ZZ",
                 "description", "z",
@@ -118,7 +118,9 @@ class ItemControllerIntegrationTest {
         mockMvc.perform(put("/api/items/{id}", 999L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(om.writeValueAsString(payload)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                // now assert the actual response body
+                .andExpect(content().string("Item not found"));
     }
 
     @Test
@@ -143,12 +145,13 @@ class ItemControllerIntegrationTest {
     @Test
     void deleteItem_notFound() throws Exception {
         mockMvc.perform(delete("/api/items/{id}", 999L))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(""));  // empty body
     }
 
     @Test
     void processItems_endpointReturnsList() throws Exception {
-        // first fire the async request
+        // first, fire the async request
         MvcResult mvc = mockMvc.perform(get("/api/items/process"))
                 .andExpect(request().asyncStarted())
                 .andReturn();
@@ -157,6 +160,7 @@ class ItemControllerIntegrationTest {
         mockMvc.perform(asyncDispatch(mvc))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[0].id").exists());
+                .andExpect(jsonPath("$[0].id").exists())
+                .andExpect(jsonPath("$[0].status", is("PROCESSED")));
     }
 }
